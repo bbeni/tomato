@@ -2,15 +2,16 @@
 package tomato
 
 import (
+	"errors"
 	"fmt"
 	"image"
-	"strings"
-	"image/draw"
 	"image/color"
+	"image/draw"
 	"runtime"
+	"strings"
 
-	"github.com/go-gl/glfw/v3.3/glfw"
 	"github.com/go-gl/gl/v4.2-core/gl" // I hope it is supported on most systems
+	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
 // Lock the thread needed for glfw (and gl?)
@@ -19,30 +20,30 @@ func init() {
 }
 
 // Direct access to the glfw.Window
-var Win 	  *glfw.Window
-var GuiImg 	   image.Image
+var Win *glfw.Window
+var GuiImg image.Image
 
 // gl stuff
-var GuiShader  uint32
+var GuiShader uint32
 var GuiTexture uint32
 var GuiQuadVAO uint32
-var GuiQuad = []float32 {
+var GuiQuad = []float32{
 	//  X, Y, Z, U, V
-	-1.0,  1.0, 1.0,  0.0, 0.0,
-	1.0,  -1.0, 1.0,  1.0, 1.0,
-	-1.0, -1.0, 1.0,  0.0, 1.0,
-	-1.0,  1.0, 1.0,  0.0, 0.0,
-	1.0,   1.0, 1.0,  1.0, 0.0,
-	1.0,  -1.0, 1.0,  1.0, 1.0,
+	-1.0, 1.0, 1.0, 0.0, 0.0,
+	1.0, -1.0, 1.0, 1.0, 1.0,
+	-1.0, -1.0, 1.0, 0.0, 1.0,
+	-1.0, 1.0, 1.0, 0.0, 0.0,
+	1.0, 1.0, 1.0, 1.0, 0.0,
+	1.0, -1.0, 1.0, 1.0, 1.0,
 }
 
 func Alive() bool {
 	if !Win.ShouldClose() && !dead {
-        glfw.PollEvents()
-        return true
+		glfw.PollEvents()
+		return true
 	} else {
 		Win.Destroy()
-	    glfw.Terminate()
+		glfw.Terminate()
 		return false
 	}
 }
@@ -56,7 +57,7 @@ func Events() <-chan Ev {
 }
 
 // setup everything with this function
-func Create(width, height int, title string) (error) {
+func Create(width, height int, title string) error {
 	if err := glfw.Init(); err != nil {
 		return err
 	}
@@ -66,7 +67,7 @@ func Create(width, height int, title string) (error) {
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
 	glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
 	//glfw.WindowHint(glfw.Decorated, glfw.False)
-	glfw.WindowHint(glfw.Resizable, glfw.False);
+	glfw.WindowHint(glfw.Resizable, glfw.False)
 	w, err := glfw.CreateWindow(width, height, title, nil, nil)
 
 	if err != nil {
@@ -74,7 +75,7 @@ func Create(width, height int, title string) (error) {
 	}
 
 	Win = w
-    Win.MakeContextCurrent()
+	Win.MakeContextCurrent()
 
 	if err = gl.Init(); err != nil {
 		return err
@@ -92,28 +93,43 @@ func Create(width, height int, title string) (error) {
 }
 
 var dead bool
-var inEvents  chan Ev
+var inEvents chan Ev
 var outEvents chan Ev
 
-//
 // The programmer is responsible for using the appropriate Fields
 // I know this is kinda ugly, but whatever..
 // @Todo: We can still later introduce an interface for type checking
-//
 type Ev struct {
-	Kind   EvKind
-	       image.Point // MouMove, MouScroll, MouUp, MouDown
-	Button Button      // MouUp,   MouDown
-	Key    Key         // KeyDown, KeyUp,     KeyRepeat
-	Rune   rune        // RuneTyped
+	Kind        EvKind
+	image.Point        // MouMove, MouScroll, MouUp, MouDown
+	Button      Button // MouUp,   MouDown
+	Key         Key    // KeyDown, KeyUp,     KeyRepeat
+	Rune        rune   // RuneTyped
 }
 
 func (ev Ev) String() string {
-	return fmt.Sprintf("[%v Ev]{%v %v %v %v}", ev.Kind, ev.Button, ev.Key, string(ev.Rune) ,ev.Point )
+	return fmt.Sprintf("[%v Ev]{%v %v %v %v}", ev.Kind, ev.Key, string(ev.Rune), ev.Point, ev.Button)
 }
+
+//go:generate stringer -type=EvKind
+type EvKind uint8
+
+const (
+	_ EvKind = iota
+	WinClose
+	MouMove
+	MouDown
+	MouUp
+	MouScroll
+	KeyDown
+	KeyUp
+	KeyRepeat
+	RuneTyped
+)
 
 //go:generate stringer -type=Button
 type Button uint8
+
 const (
 	MouseLeft Button = iota
 	MouseRight
@@ -122,6 +138,7 @@ const (
 
 //go:generate stringer -type=Key
 type Key uint8
+
 const (
 	Left Key = iota
 	Right
@@ -140,21 +157,6 @@ const (
 	Shift
 	Ctrl
 	Alt
-)
-
-//go:generate stringer -type=EvKind
-type EvKind uint8
-const (
-	_         EvKind = iota
-	WinClose
-	MouMove
-	MouDown
-	MouUp
-	MouScroll
-	KeyDown
-	KeyUp
-	KeyRepeat
-	RuneTyped
 )
 
 //
@@ -194,12 +196,12 @@ var keys = map[glfw.Key]Key{
 func eventsSetup() {
 	var mouseX, mouseY int
 
-	inEvents  = make(chan Ev)
+	inEvents = make(chan Ev)
 	outEvents = make(chan Ev)
 
 	go func() {
 
-		var queue []Ev;
+		var queue []Ev
 
 		for {
 			in, success := <-inEvents
@@ -230,7 +232,7 @@ func eventsSetup() {
 		mouseX, mouseY = int(x), int(y)
 		inEvents <- Ev{
 			Kind:  MouMove,
-			Point: image.Pt(mouseX,mouseY),
+			Point: image.Pt(mouseX, mouseY),
 		}
 	})
 
@@ -242,14 +244,14 @@ func eventsSetup() {
 		switch action {
 		case glfw.Press:
 			inEvents <- Ev{
-				Kind:  MouDown,
-				Point: image.Pt(mouseX,mouseY),
+				Kind:   MouDown,
+				Point:  image.Pt(mouseX, mouseY),
 				Button: b,
 			}
 		case glfw.Release:
 			inEvents <- Ev{
-				Kind:  MouUp,
-				Point: image.Pt(mouseX,mouseY),
+				Kind:   MouUp,
+				Point:  image.Pt(mouseX, mouseY),
 				Button: b,
 			}
 		}
@@ -306,7 +308,7 @@ func eventsSetup() {
 
 func openGLSetup() error {
 	var err error
-	var screenVertShader = `
+	var guiShaderSource = `
 		#version 420
 
 		in vec3 vert;
@@ -317,9 +319,7 @@ func openGLSetup() error {
 			fragTexCoord = vertTexCoord;
 			gl_Position = vec4(vert.xy, 0.0, 1.0);
 		}
-	` + "\x00"
-
-	var screenFragShader = `
+		#define FRAGMENT_SHADER
 		#version 420
 
 		uniform sampler2D tex;
@@ -332,7 +332,7 @@ func openGLSetup() error {
 		}
 	` + "\x00"
 
-	GuiShader, err = NewGLProgram(screenVertShader, screenFragShader)
+	GuiShader, err = NewGLProgram(guiShaderSource)
 
 	if err != nil {
 		fmt.Print("ERROR making GuiShader: ")
@@ -393,7 +393,7 @@ func Draw() {
 	gl.UseProgram(GuiShader)
 	gl.Enable(gl.BLEND)
 	//gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)  	  // Assume premultiplied alpha
-	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)    // Non-premultipled version
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA) // Non-premultipled version
 
 	bounds := GuiImg.Bounds()
 
@@ -427,21 +427,19 @@ func Draw() {
 	// @Todo for now just clear all screen
 	//gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
 
-
 	gl.Enable(gl.SCISSOR_TEST)
 	for _, op := range drawQueue {
 		// @Todo might be wrong, need to add ceil/floor to the values.
 		_, hei := Win.GetFramebufferSize()
 		gl.Scissor(
 			int32(op.where.Min.X),
-			int32(hei) - int32(op.where.Max.Y),
+			int32(hei)-int32(op.where.Max.Y),
 			int32(op.where.Dx()),
 			int32(op.where.Dy()))
 		gl.Clear(gl.DEPTH_BUFFER_BIT)
 		//gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
 	}
 	gl.Disable(gl.SCISSOR_TEST)
-
 
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.BindTexture(gl.TEXTURE_2D, GuiTexture)
@@ -454,7 +452,16 @@ func Draw() {
 	drawQueue = drawQueue[:0]
 }
 
-func NewGLProgram(vertexShaderSource, fragmentShaderSource string) (uint32, error) {
+func NewGLProgram(shaderSource string) (uint32, error) {
+
+	shaderSources := strings.Split(shaderSource, "#define FRAGMENT_SHADER")
+
+	if len(shaderSources) != 2 {
+		return 0, errors.New("Syntax Error: tomato style shader source needs `#define FRAGMENT_SHADER` that separates vertex/fragment shader! (this is because we then only need one source file per shader!)")
+	}
+
+	vertexShaderSource := shaderSources[0]
+	fragmentShaderSource := shaderSources[1]
 
 	vertexShader, err := compileShader(vertexShaderSource, gl.VERTEX_SHADER)
 	if err != nil {
@@ -513,13 +520,13 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 	return shader, nil
 }
 
-func newScreenTexture(width, height int) (uint32) {
+func newScreenTexture(width, height int) uint32 {
 
 	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
 	if rgba.Stride != rgba.Rect.Size().X*4 {
 		panic("unsupported stride")
 	}
-	draw.Draw(rgba, rgba.Bounds(), image.NewUniform(color.RGBA{0,0,0,0}), image.Point{0, 0}, draw.Src)
+	draw.Draw(rgba, rgba.Bounds(), image.NewUniform(color.RGBA{0, 0, 0, 0}), image.Point{0, 0}, draw.Src)
 
 	var texture uint32
 	gl.GenTextures(1, &texture)
