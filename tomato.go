@@ -81,7 +81,9 @@ func Create(width, height int, title string) error {
 		return err
 	}
 
-	openGLSetup()
+	if err = openGLSetup(); err != nil {
+		return err
+	}
 
 	gl.ClearColor(0.9, 0.85, 0.3, 1.0)
 	gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
@@ -330,13 +332,12 @@ func openGLSetup() error {
 		void main() {
 			outputColor = texture(tex, fragTexCoord);
 		}
-	` + "\x00"
+	`
 
 	GuiShader, err = NewGLProgram(guiShaderSource)
 
 	if err != nil {
-		fmt.Print("ERROR making GuiShader: ")
-		fmt.Println(err)
+		fmt.Print("\nERROR making GuiShader: ")
 		return err
 	}
 
@@ -424,27 +425,32 @@ func Draw() {
 	gl.Enable(gl.DEPTH_TEST)
 	gl.DepthFunc(gl.LESS)
 
-	// @Todo for now just clear all screen
 	//gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
 
-	gl.Enable(gl.SCISSOR_TEST)
-	for _, op := range drawQueue {
-		// @Todo might be wrong, need to add ceil/floor to the values.
-		_, hei := Win.GetFramebufferSize()
-		gl.Scissor(
-			int32(op.where.Min.X),
-			int32(hei)-int32(op.where.Max.Y),
-			int32(op.where.Dx()),
-			int32(op.where.Dy()))
-		gl.Clear(gl.DEPTH_BUFFER_BIT)
-		//gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
-	}
-	gl.Disable(gl.SCISSOR_TEST)
+	// @Speed two times drawing seems stupid, especially if done like this. but we need it
+	// because of double buffering - we need to draw it on both buffers..
+	for range 2 {
+		gl.Enable(gl.SCISSOR_TEST)
+		for _, op := range drawQueue {
+			// @Todo might be wrong, need to add ceil/floor to the values.
+			_, hei := Win.GetFramebufferSize()
+			gl.Scissor(
+				int32(op.where.Min.X),
+				int32(hei)-int32(op.where.Max.Y),
+				int32(op.where.Dx()),
+				int32(op.where.Dy()))
+			gl.Clear(gl.DEPTH_BUFFER_BIT)
+			//gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
+		}
+		gl.Disable(gl.SCISSOR_TEST)
 
-	gl.ActiveTexture(gl.TEXTURE0)
-	gl.BindTexture(gl.TEXTURE_2D, GuiTexture)
-	gl.BindVertexArray(GuiQuadVAO)
-	gl.DrawArrays(gl.TRIANGLES, 0, 6*2*3)
+		gl.ActiveTexture(gl.TEXTURE0)
+		gl.BindTexture(gl.TEXTURE_2D, GuiTexture)
+		gl.BindVertexArray(GuiQuadVAO)
+		gl.DrawArrays(gl.TRIANGLES, 0, 6*2*3)
+		Win.SwapBuffers()
+	}
+
 	gl.Disable(gl.BLEND)
 	gl.Disable(gl.DEPTH_TEST)
 
@@ -457,11 +463,11 @@ func NewGLProgram(shaderSource string) (uint32, error) {
 	shaderSources := strings.Split(shaderSource, "#define FRAGMENT_SHADER")
 
 	if len(shaderSources) != 2 {
-		return 0, errors.New("Syntax Error: tomato style shader source needs `#define FRAGMENT_SHADER` that separates vertex/fragment shader! (this is because we then only need one source file per shader!)")
+		return 0, errors.New("Syntax Error: tomato style shader source needs `#define FRAGMENT_SHADER` that separates vertex/fragment shader! (this is because we only want one shader source file!)\n")
 	}
 
-	vertexShaderSource := shaderSources[0]
-	fragmentShaderSource := shaderSources[1]
+	vertexShaderSource := shaderSources[0] + "\x00"
+	fragmentShaderSource := shaderSources[1] + "\x00"
 
 	vertexShader, err := compileShader(vertexShaderSource, gl.VERTEX_SHADER)
 	if err != nil {

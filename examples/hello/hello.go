@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"fmt"
 	"image"
 	"image/color"
@@ -12,7 +13,8 @@ import (
 func main() {
 	err := tomato.Create(1080, 720, "Hello Tomato")
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 
 	// Tomato!
@@ -24,8 +26,9 @@ func main() {
 	img3 := image.NewUniform(color.RGBA{23, 200, 23, 255})
 
 	for tomato.Alive() {
+
 		// gather input
-	loop:
+		loop:
 		for {
 			select {
 			case event := <-tomato.Events():
