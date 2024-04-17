@@ -4,6 +4,7 @@ package tomato
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"image"
 	"image/color"
 	"image/draw"
@@ -21,7 +22,7 @@ func init() {
 
 // Direct access to the glfw.Window
 var Win *glfw.Window
-var GuiImg image.Image
+var GuiImg *image.RGBA
 
 // gl stuff
 var GuiShader uint32
@@ -376,18 +377,19 @@ type drawOp struct {
 	img   image.Image
 }
 
-// LIFO for now.
-// @Todo use fifo!
 // @Memory prealocate memory maybe?
 var drawQueue []drawOp
+var drawLock  sync.Mutex
 
 // An Image to draw on the screen at Rectangle r
 // when Draw() is called all is rendered.
 func ToDraw(r image.Rectangle, img image.Image) {
+	drawLock.Lock()
 	drawQueue = append(drawQueue, drawOp{
 		where: r,
 		img:   img,
 	})
+	drawLock.Unlock()
 }
 
 func Draw() {
@@ -396,20 +398,17 @@ func Draw() {
 	//gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)  	  // Assume premultiplied alpha
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA) // Non-premultipled version
 
-	bounds := GuiImg.Bounds()
+	drawLock.Lock()
 
 	// @Speed use union of all bounds instead...
-	tmp := image.NewRGBA(bounds)
-
+	bounds := GuiImg.Bounds()
 	for _, op := range drawQueue {
 		op.where = op.where.Intersect(bounds)
 		if op.where.Empty() {
 			continue
 		}
-		draw.Draw(tmp, op.where, op.img, op.where.Min, draw.Src)
+		draw.Draw(GuiImg, op.where, op.img, op.where.Min, draw.Src)
 	}
-
-	GuiImg = tmp
 
 	gl.TextureSubImage2D(
 		GuiTexture,
@@ -420,7 +419,7 @@ func Draw() {
 		int32(bounds.Dy()),
 		gl.RGBA,
 		gl.UNSIGNED_BYTE,
-		gl.Ptr(tmp.Pix))
+		gl.Ptr(GuiImg.Pix))
 
 	gl.Enable(gl.DEPTH_TEST)
 	gl.DepthFunc(gl.LESS)
@@ -451,11 +450,12 @@ func Draw() {
 		Win.SwapBuffers()
 	}
 
-	gl.Disable(gl.BLEND)
-	gl.Disable(gl.DEPTH_TEST)
-
 	// reset draw queue
 	drawQueue = drawQueue[:0]
+	drawLock.Unlock()
+
+	gl.Disable(gl.BLEND)
+	gl.Disable(gl.DEPTH_TEST)
 }
 
 func NewGLProgram(shaderSource string) (uint32, error) {
