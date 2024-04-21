@@ -4,12 +4,12 @@ package tomato
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"image"
 	"image/color"
 	"image/draw"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/go-gl/gl/v4.2-core/gl" // I hope it is supported on most systems
 	"github.com/go-gl/glfw/v3.3/glfw"
@@ -24,6 +24,7 @@ func init() {
 var Win *glfw.Window
 var GuiImg *image.RGBA
 
+// @Todo rename Gui, because its not only for Gui stuff, its used for any 2d rendering... it's more like an overlay over existing gl stuff, so maybe hud?
 // gl stuff
 var GuiShader uint32
 var GuiTexture uint32
@@ -195,9 +196,12 @@ var keys = map[glfw.Key]Key{
 	glfw.KeyRightAlt:     Alt,
 }
 
+// @Todo store in a struct
+var MouseX, MouseY int
+var MouseDownL, MouseDownM, MouseDownR bool
+
 // function adapted from faiface/gui
 func eventsSetup() {
-	var mouseX, mouseY int
 
 	inEvents = make(chan Ev)
 	outEvents = make(chan Ev)
@@ -232,10 +236,10 @@ func eventsSetup() {
 	}()
 
 	Win.SetCursorPosCallback(func(_ *glfw.Window, x, y float64) {
-		mouseX, mouseY = int(x), int(y)
+		MouseX, MouseY = int(x), int(y)
 		inEvents <- Ev{
 			Kind:  MouMove,
-			Point: image.Pt(mouseX, mouseY),
+			Point: image.Pt(MouseX, MouseY),
 		}
 	})
 
@@ -246,15 +250,32 @@ func eventsSetup() {
 		}
 		switch action {
 		case glfw.Press:
+			switch b {
+			case MouseLeft:
+				MouseDownL = true
+			case MouseMiddle:
+				MouseDownM = true
+			case MouseRight:
+				MouseDownR = true
+			}
+
 			inEvents <- Ev{
 				Kind:   MouDown,
-				Point:  image.Pt(mouseX, mouseY),
+				Point:  image.Pt(MouseX, MouseY),
 				Button: b,
 			}
 		case glfw.Release:
+			switch b {
+			case MouseLeft:
+				MouseDownL = false
+			case MouseMiddle:
+				MouseDownM = false
+			case MouseRight:
+				MouseDownR = false
+			}
 			inEvents <- Ev{
 				Kind:   MouUp,
-				Point:  image.Pt(mouseX, mouseY),
+				Point:  image.Pt(MouseX, MouseY),
 				Button: b,
 			}
 		}
@@ -379,7 +400,7 @@ type drawOp struct {
 
 // @Memory prealocate memory maybe?
 var drawQueue []drawOp
-var drawLock  sync.Mutex
+var drawLock sync.Mutex
 
 // An Image to draw on the screen at Rectangle r
 // when Draw() is called all is rendered.
@@ -392,10 +413,20 @@ func ToDraw(r image.Rectangle, img image.Image) {
 	drawLock.Unlock()
 }
 
+func Clear() {
+	clearColor := []byte{255, 255, 255, 255}
+	gl.ClearTexImage(GuiTexture, 0, gl.RGBA, gl.UNSIGNED_BYTE, gl.Ptr(&clearColor[0]))
+	GuiImg = image.NewRGBA(GuiImg.Bounds())
+	gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
+}
+
+// If the Gui is on the texture on the GPU, the additional draw calls don't matter anyway
+// we could just Draw it using Alpha blending
+
 func Draw() {
 	gl.UseProgram(GuiShader)
 	gl.Enable(gl.BLEND)
-	//gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)  	  // Assume premultiplied alpha
+	//gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)       // Assume premultiplied alpha
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA) // Non-premultipled version
 
 	drawLock.Lock()
@@ -407,7 +438,7 @@ func Draw() {
 		if op.where.Empty() {
 			continue
 		}
-		draw.Draw(GuiImg, op.where, op.img, op.where.Min, draw.Src)
+		draw.Draw(GuiImg, op.where, op.img, image.ZP, draw.Src)
 	}
 
 	gl.TextureSubImage2D(
@@ -424,30 +455,11 @@ func Draw() {
 	gl.Enable(gl.DEPTH_TEST)
 	gl.DepthFunc(gl.LESS)
 
-	//gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
-
-	// @Speed two times drawing seems stupid, especially if done like this. but we need it
-	// because of double buffering - we need to draw it on both buffers..
-	for range 2 {
-		gl.Enable(gl.SCISSOR_TEST)
-		for _, op := range drawQueue {
-			// @Todo might be wrong, need to add ceil/floor to the values.
-			_, hei := Win.GetFramebufferSize()
-			gl.Scissor(
-				int32(op.where.Min.X),
-				int32(hei)-int32(op.where.Max.Y),
-				int32(op.where.Dx()),
-				int32(op.where.Dy()))
-			gl.Clear(gl.DEPTH_BUFFER_BIT)
-			//gl.Clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT)
-		}
-		gl.Disable(gl.SCISSOR_TEST)
-
+	{
 		gl.ActiveTexture(gl.TEXTURE0)
 		gl.BindTexture(gl.TEXTURE_2D, GuiTexture)
 		gl.BindVertexArray(GuiQuadVAO)
 		gl.DrawArrays(gl.TRIANGLES, 0, 6*2*3)
-		Win.SwapBuffers()
 	}
 
 	// reset draw queue

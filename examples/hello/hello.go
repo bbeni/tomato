@@ -1,10 +1,10 @@
 package main
 
 import (
-	"os"
 	"fmt"
 	"image"
 	"image/color"
+	"os"
 
 	"github.com/bbeni/tomato"
 	// "github.com/go-gl/gl/v4.2-core/gl" // Use this version of OpenGL
@@ -28,7 +28,7 @@ func main() {
 	for tomato.Alive() {
 
 		// gather input
-		loop:
+	loop:
 		for {
 			select {
 			case event := <-tomato.Events():
