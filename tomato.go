@@ -462,8 +462,6 @@ func Draw() {
 		gl.DrawArrays(gl.TRIANGLES, 0, 6*2*3)
 	}
 
-	fmt.Println(len(drawQueue))
-
 	// reset draw queue
 	drawQueue = drawQueue[:0]
 	drawLock.Unlock()
